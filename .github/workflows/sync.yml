@@ -1,19 +1,52 @@
-name: Upstream Sync
+name: Sync Fork with Upstream
+
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每天凌晨执行
+    - cron: '0 0 * * *'  # 每天UTC时间0点执行（根据时区修改）
+  workflow_dispatch:  # 支持手动触发
+
 jobs:
   sync_with_upstream:
     runs-on: ubuntu-latest
-    if: ${{ github.event.repository.fork }}
+    
     steps:
-    - name: Checkout target repo
+    - name: Checkout target repository
       uses: actions/checkout@v3
-    - name: Sync with Upstream
-      uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
-      with:
-        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-        upstream_sync_repo: snap-one/docs-driverworks-proxyprotocol-lightv2
-        upstream_sync_branch: master
-        target_sync_branch: master
-        test_mode: false
+      
+    - name: Set up Git
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+    - name: Add upstream remote repository
+      run: |
+        git remote add upstream https://github.com/snap-one/docs-driverworks-proxyprotocol-lightv2.git
+        git fetch upstream
+        
+    - name: Check remote repository URL
+      run: |
+        git remote -v  # 检查远程仓库设置，确保 upstream URL 正确
+
+    - name: List all remote branches
+      run: |
+        git fetch upstream  # 确保拉取主仓库分支
+        git branch -r  # 查看远程分支，确保 upstream/main 存在
+
+    - name: Check access to upstream repository
+      run: |
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/snap-one/docs-driverworks-proxyprotocol-projector \
+          || echo "Failed to access the upstream repository"  # 验证是否有权限访问主仓库
+
+    - name: Configure Git pull strategy to merge
+      run: |
+        git config pull.rebase false  # 设置 git pull 使用 merge 方式
+        
+    - name: Sync with upstream (allow unrelated histories)
+      run: |
+        git checkout main  # 确保切换到目标分支 main
+        git pull upstream main --allow-unrelated-histories  # 强制合并不相关的历史
+
+    - name: Check for changes and push
+      run: |
+        git diff --quiet upstream/main main && git push origin main || echo "No changes to sync"
